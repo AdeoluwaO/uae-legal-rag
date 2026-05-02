@@ -1,0 +1,14 @@
+pydantic
+pyyaml
+typing-extensions
+pdfplumber
+chromadb
+sentence-transformers
+langchain
+langchain-community
+instructor
+pytest
+tqdm
+tiktoken
+python-dotenv
+pypdf

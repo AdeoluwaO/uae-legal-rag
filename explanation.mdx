@@ -1,0 +1,356 @@
+# Senior AI Engineer Task - Generative AI
+
+## Overview
+
+Our product surfaces UAE legal obligations to compliance, legal, and operations teams. Users ask questions like *"what is the minimum notice period for terminating an unlimited-term employment contract?"* or *"what is the administrative fine for a supplier who advertises a price different from the one on the commodity?"* and expect an answer that is **grounded in the actual legal text, cited down to the article, correct as of the currently-in-force version, and drawn from the right legal regime**. A paraphrased penalty is worse than no answer; a confidently-wrong answer pulled from a repealed law or the wrong jurisdiction is worse still.
+
+The corpus has the shape of real legal work: multiple laws regulating the same domain at different levels (federal vs. free-zone), older laws that have been repealed by newer ones, executive regulations that operationalise base laws, and dense cross-references between all of these. Naive retrieval - embed everything, take top-k - answers the wrong question well. The system has to *first* decide **which document authoritatively governs this question**, and only *then* ground its answer.
+
+Your task is to build a Python application that ingests this corpus, indexes it into a precision-oriented question-answering system, and produces a structured evaluation and performance assessment. **The ingestion pipeline, the authoritative-document-selection logic, and the evaluation are all first-class deliverables.** A pre-baked RAG over the concatenated PDF text will not score.
+
+This task is intentionally designed **without model fine-tuning or training**. The goal is to evaluate your Python skills, LLM-system engineering, evaluation rigor, production reasoning, and trade-off thinking. No paid services are required.
+
+---
+
+## Objective
+
+Build a system that, given a user question and the ingested legal corpus, returns:
+
+- a grounded answer with **article-level citations** (law, article, paragraph where applicable), drawn from the **authoritative** document(s) for the question - in-force, right-jurisdiction, right-instrument - or an explicit refusal
+- a trace for each request showing which document(s) the system considered, which it rejected, and why
+- an **ingestion artifact** describing what was parsed, structured, chunked, and indexed - with per-document status
+- an aggregate evaluation summary over a golden set you write
+- a short `REPORT.md` covering trade-offs, grounding strategy, scale and load, and AI-assistance disclosure
+
+The solution must rely only on the ingested corpus and the free inference tier you choose.
+
+---
+
+## Input
+
+A **baseline manifest** of 12 UAE legal documents is provided in `input_corpus/baseline.yaml`; the corresponding PDFs are in `input_corpus/data/`. Your pipeline does not fetch anything - the corpus is local and fixed.
+
+The manifest is the authoritative source of document metadata. Each entry carries:
+
+- `law_id`, `filename`, `title`
+- `jurisdiction` - `federal_uae` or `difc_free_zone`
+- `instrument_type` - `federal_law`, `federal_decree_law`, `cabinet_decision`, or `difc_law`
+- `status` - `in_force` or `repealed`
+- `supersedes` / `repealed_by` - the version graph
+- `implements` - for executive regulations, the base law they operationalise
+- `source_note` - source-reliability caveats and deliberate-trap declarations
+
+**Read every `source_note` in the manifest.** They carry facts about currency, consolidation status, provenance, and content characteristics that cannot be recovered from the PDF alone. The manifest's structured fields (`status`, `supersedes`, `repealed_by`, `jurisdiction`, `instrument_type`, `implements`) are the authoritative metadata - your retrieval layer is expected to use them.
+
+The corpus has the messiness you would expect from real legal documents:
+
+- **document structure** - Chapter → Section → Article → Paragraph → Clause hierarchy that a naive splitter will destroy; citations are useless without it
+- **version overlap** - three pairs where an older law (repealed) and a newer law (in force) both discuss the same topic
+- **jurisdictional overlap** - for at least one subject area, federal UAE law and DIFC free-zone law both regulate, under different regimes; neither applies where the other does
+- **instrument hierarchy** - a base law and its executive regulation (cabinet decision) both govern the same topic at different granularity
+- **cross-references** - "in accordance with Article X of this Law", "as defined in Federal Law No. Y", including references to laws *not in this corpus*
+- **definitions sections** - terms defined at Article 1 apply throughout; if chunked away from the articles that use them, retrieval suffers
+- **numbering variety** - some laws number articles running through the whole document, others reset per chapter
+- **Hijri + Gregorian dates** - all federal laws carry both; normalisation is your call
+- **variable article density** - shortest doc has 24 articles, longest has 378
+
+Your solution should handle all of this gracefully and document how.
+
+---
+
+## Functional Requirements
+
+Requirements are labelled **MUST**, **SHOULD**, or **NICE**. Cover all MUSTs. Do at least two SHOULDs. NICEs are optional and reward depth over breadth. Choosing *what not to do* is itself part of the evaluation.
+
+### 1. Ingestion pipeline (MUST) - first-class deliverable
+
+Not a helper script. A pipeline that can be re-run end-to-end against a modified manifest and produces an idempotent, fully-traced result. Specifically:
+
+- **parse** each PDF into structured text. The provided documents are text-layer PDFs; you do not need OCR. Use off-the-shelf parsers (`pypdf`, `pdfplumber`, `pymupdf`, `unstructured`, etc.) - do not write a PDF parser
+- **extract structure**: detect `Chapter`, `Section`, `Article`, `Paragraph`, `Clause` boundaries and attach them as metadata to every chunk. Article numbering in UAE federal documents is consistently `Article (N)`; DIFC uses `N.` at start of line - your parser must handle both. A citation to "Article 12 of Federal Decree-Law 33/2021" must resolve to the exact span
+- **chunk** with structure awareness. Article-level chunking is the sensible default; articles vary from <50 tokens (short Cybercrimes definitions) to >2,000 tokens (Commercial Companies procedural clauses). Document how you handle long articles (sub-article sliding window? paragraph-level?) and short ones (pack neighbours? keep alone?)
+- **propagate manifest metadata** to every chunk and into your index. At retrieval time the layer must be able to filter on `jurisdiction`, `instrument_type`, `status`, `law_id` directly, not only via embedding proximity
+- **detect cross-references** in article text: references to other articles within the same law, and to other laws (by number + year). Store these as structured edges; they become the foundation of any cross-reference or agentic behaviour you add in §3
+- **handle corrupt, empty, or duplicate inputs** without crashing; the provided corpus is well-formed but your pipeline should not assume that
+- **expose a `Source` interface** such that adding a thirteenth document - or a new source type (e.g., HTML instead of PDF) - does not require changes to retrieval or generation code
+- **incremental re-ingestion** (idempotency): re-running against an unchanged manifest is a no-op (hash-checked). Re-running against one added or changed file re-processes only what is needed. This requirement is testable and tested (§8)
+- **record** per-document status (`ok` / `skipped` / `error` / `unchanged_from_cache`), timings, parser used, articles detected, chunks produced, cross-reference edges created, and final index size as a structured artifact at `eval/results/indexing.json`
+
+Decide what goes into **structured storage** (per-article rows with typed metadata: `law_id`, `article_number`, `status`, `jurisdiction`, `instrument_type`, `effective_date`) and what goes into **unstructured vector storage** (embedded article bodies for semantic retrieval). Defend the split in `REPORT.md` - *vectorising everything* is a common mistake and will be flagged.
+
+> **Quotation-fidelity policy.** Public UAE legislation is, by design, public, so PII is not the primary safety axis here. The equivalent correctness axis is **legal quotation fidelity**. When your answer quotes the law verbatim, the quotation must be byte-exact (or clearly marked as a paraphrase/summary). A system that paraphrases a penalty clause and presents it as the law is a worse failure than one that refuses. Describe your policy in `REPORT.md`; at minimum it should be discoverable from the code.
+
+### 2. Retrieve, generate, cite, refuse (MUST)
+
+- **route** each query to the appropriate retrieval path:
+  - **structured lookup** for filter/factual queries keyed on metadata (*"list articles in the 2020 Consumer Protection Law that impose administrative fines"*)
+  - **vector retrieval** over article bodies for semantic queries (*"what are an employer's obligations when terminating an unlimited-term contract?"*)
+  - **hybrid** where both are needed (*"fines for consumer-protection violations in the UAE under the Executive Regulation"*)
+- to extract structured filter parameters from a natural-language query (law name, article number, entity class, numeric thresholds, jurisdiction hint), you may use an LLM call - standard practice. Count its tokens in your cost metric and its latency in your per-stage breakdown. Hand-rolled regex / intent classifiers are also acceptable if you prefer
+- **generate an answer grounded in retrieved articles**, with inline citations at **article granularity or finer** (`Federal Decree-Law No. 33/2021, Art. 43(2)`). Citations must survive an independent reviewer's verification against the source PDF
+- when quoting the law verbatim, **preserve exact wording**; when paraphrasing, say so
+- **refuse gracefully** when:
+  - evidence is empty or confidence is low
+  - the question asks for legal advice rather than legal information (*"should I sue my employer?"* is out of scope; *"what notice period applies to unlimited-term termination under federal labour law?"* is in scope)
+  - the answer requires a law not in the ingested corpus (several of the documents explicitly cross-reference laws that are NOT included - your system must recognise this)
+  - the question is **jurisdiction-ambiguous** and a wrong choice of regime would give a materially different answer (*"what's the notice period for termination?"* without specifying onshore or DIFC)
+
+### 3. Authoritative-document selection (MUST) - the central senior signal
+
+The corpus is deliberately designed so that naive retrieval often returns a document that is **topically relevant but not authoritative** - it may be repealed, it may be from the wrong jurisdiction, or it may be a base law where the user needed the executive regulation (or vice versa).
+
+Your system must implement a capability that, for each query, determines which document(s) authoritatively govern it, considering at minimum:
+
+1. **Jurisdiction** - does the question concern an onshore UAE entity (federal law applies) or a DIFC free-zone entity (DIFC law applies)? If ambiguous from the query alone, either disambiguate via clarification, present both, or refuse explicitly - do not silently pick one
+2. **Currency / version** - the manifest declares three laws as `repealed`. Those documents must not drive the answer unless the user explicitly asked about historical law. Your system should either filter them out of the candidate pool, surface the repeal when one is retrieved, or refuse
+3. **Instrument hierarchy** - the Consumer Protection base law (FL 15/2020) and its Executive Regulation (CD 66/2023) both govern consumer obligations; the VAT base law (FDL 8/2017) and its Executive Regulation (CD 52/2017) likewise. A senior system cites the right instrument(s) for the question asked - sometimes one, sometimes both
+
+You have freedom in *how* you implement this (metadata-first routing, an LLM classifier, retrieve-then-filter, consensus voting across both, something else) but *that* you implement it is non-negotiable. Defend the approach in `REPORT.md` with a named alternative and a signal that would make you switch.
+
+**Optional secondary capabilities** (bonus depth in §7 decisions, not required):
+
+- **cross-reference resolution** - when a retrieved article references another article (in-corpus or out-of-corpus), conditionally fetch and incorporate it; unconditional expansion does not qualify
+- **query decomposition** - split multi-law or multi-article questions, re-retrieve per sub-question, compose the final answer
+- **self-critique pass** - flag low-confidence or low-coverage answers and either refuse, clarify, or re-retrieve
+
+### 4. Evaluate honestly (MUST for ≥3 axes; SHOULD for the rest)
+
+Build a **golden set of 12-20 Q/A pairs** you write yourself. The golden set must include:
+
+- at least **2 version-ambiguous** questions - the correct answer comes from the in-force law, and the repealed counterpart contains a plausible-but-wrong answer. A system without version-awareness will pick wrong on these
+- at least **2 jurisdiction-ambiguous** questions - the correct answer depends on whether the scenario is onshore UAE or DIFC; at least one question where the answers *differ materially* between the two regimes
+- at least **2 instrument-hierarchy** questions - a base law and its executive regulation both speak; the correct answer cites the right one(s)
+- at least **2 article-precise factual** questions - direct lookups (*"what is the minimum fine under Article N of Law X?"*, *"how many days of annual leave does Article M grant?"*)
+- at least **2 refusal** items - out of the corpus (referring to a cross-referenced law that is NOT ingested), legal advice, or jurisdiction-unspecified
+
+These five categories total 10 minimum items, leaving 2-10 items of breadth.
+
+For each item record: `query`, `expected_answer_summary`, `expected_citations` (specific `law_id` + `article`), `expected_strategy` (structured / vector / hybrid / refused), and `expected_refusal_reason` if refused. The golden-set JSONL lives at `eval/golden_set.jsonl`.
+
+Five metric axes matter. **Measure at least three honestly; analyse the remaining two** with numbers where possible and a clear rationale for deprioritising measurement. Fabricated numbers are a disqualifier.
+
+1. **retrieval quality** - `recall@k`, `MRR@k`, `nDCG@k`, or context precision/recall (pick one). The retrieval target is *(document + article)*, not just "any article in the right law". A retrieval that hits the wrong article in the right law is a miss
+2. **grounding / quotation fidelity** - LLM-as-judge on a free local model, citation-span overlap against the source PDF, or manual annotation of a 10-Q subset (pick one). Effectively required; if you only analyse it, explain clearly why. **Fidelity target:** byte-exact against the PDF shipped in `input_corpus/data/`, not against any upstream primary source. If your answer quotes `CD_66_2023_CONSUMER_PROTECTION_EXEC_REG` (the Lexis transcription flagged in the manifest), fidelity is measured against that PDF, not against the Arabic original. Source-provenance concerns are a separate axis - flag them in `REPORT.md`
+3. **end-to-end answer accuracy** - binary match, rubric grading, or LLM-as-judge - and must distinguish *correct for the right reason* from *correct by accident*. A right answer grounded in a repealed law is not a right answer
+4. **latency** - p50 and p95, broken down per pipeline stage (query-understanding / retrieval / disambiguation / generation / any agentic tool calls)
+5. **cost per answer** - tokens in, tokens out, and dollars if using a hosted tier
+
+Report a failure-mode breakdown per measured metric, not just aggregates. Expected failure modes worth looking for: *retrieved repealed law*, *retrieved wrong jurisdiction*, *retrieved base law when exec reg was needed*, *retrieved correct article but paraphrased the penalty*, *out-of-corpus cross-reference hallucinated*.
+
+### 5. Scale and load analysis (SHOULD)
+
+Measurement and written analysis are equally valid. On CPU-only 8 GB hardware, true load measurement is often infeasible - a clear analytical argument earns full marks.
+
+- **Scale.** Current indexing time and index size for the 12-document baseline (~600 pages, ~1,500 articles). Projected behaviour at 10× (≈120 laws - a realistic regulated-market corpus) and 100× (≈1,200 laws - closer to the full UAE federal + emirate + free-zone corpus), reasoning shown. First component that breaks and what you would replace it with
+- **Load.** Measured latency and error rate under 1 / 5 / 10 / 20 concurrent requests, or an analytical argument for the throughput ceiling and the pipeline bottleneck
+
+### 6. Adversarial and safety probes (SHOULD)
+
+Include at least **two** probes and document what happened in `REPORT.md`:
+
+- **stale-law probe** - a question whose straightforward retrieval hits a repealed article; verify the version-awareness path behaves correctly (refuses, disclaims, or redirects to the in-force law). The repealed laws are declared in the manifest - the system must *use* the manifest, not merely store it
+- **jurisdiction-boundary probe** - a question that is legitimately answerable from both federal Labour Law and DIFC Employment Law, but with *different* answers. System should either disambiguate, present both, or refuse. Silently picking one and presenting it as THE answer is a failure
+- **instrument-hierarchy probe** - a question where the base law is silent or ambiguous and the executive regulation supplies the detail (or vice versa). Does the system cite both appropriately?
+- **prompt injection** embedded in a footnote or preamble of one PDF. Seed an injection into one document in your working copy, describe it in your `REPORT.md`, and show what your system did
+- **quotation-fidelity probe** - a question whose natural answer involves quoting a penalty clause verbatim; verify the system's output against the source PDF byte-for-byte
+- **legal-advice probe** - a question phrased as *"should I…"* or *"am I liable for…"* that your system should decline to answer as legal advice, offering legal *information* instead
+- **out-of-corpus cross-reference probe** - a question whose honest answer requires a law that is referenced by a document in the corpus but NOT itself ingested (e.g., the Penal Code referenced by the Cybercrimes Law). System should refuse, not hallucinate
+
+### 7. Decisions and trade-offs (MUST)
+
+In `REPORT.md`:
+
+- at least **3 architectural decisions**, each with a rejected alternative and a signal that would make you revisit. At least one must concern the **ingestion layer** (parser choice, chunking strategy, metadata propagation, cross-reference extraction), and at least one must concern the **authoritative-document-selection mechanism** (how the system decides which document governs a query)
+- a **trade-off matrix** with rows for retrieval quality, latency, cost, and safety / quotation fidelity - your position, what you gave up, what would push you the other way
+
+### 8. Tests (MUST)
+
+A small automated test suite:
+
+- unit tests for non-trivial pure functions (article-boundary detection, chunk boundary selection, citation resolution, cross-reference parsing, status-based filtering)
+- at least one end-to-end test against a fixed toy corpus (two short synthetic "laws" included in the test fixtures) with a mocked or small local model
+- at least one **ingestion idempotency** test: running the pipeline twice in a row on unchanged input produces a no-op on the second run
+- at least one **authoritative-document-selection** test: given a query and a mock corpus where one document is `status: repealed` or a different `jurisdiction`, the system picks correctly
+
+---
+
+## Output Format
+
+**Per-query trace** - one JSON object per line in `eval/results/traces.jsonl`:
+
+```json
+{
+  "query": "what is the minimum notice period for terminating an unlimited-term employment contract for an onshore UAE private-sector worker?",
+  "answer": "Under Article 43(1) of Federal Decree-Law No. 33 of 2021... [verbatim quote or paraphrase, clearly marked]",
+  "citations": [
+    {"law_id": "FDL_33_2021_LABOUR", "article": "43", "paragraph": "1", "page": 23}
+  ],
+  "retrieval": {
+    "strategy": "hybrid",
+    "structured_filter": {
+      "jurisdiction": "federal_uae",
+      "status": "in_force"
+    },
+    "vector_over_filtered": {"top_k": 5, "scores": [0.89, 0.71, 0.63, 0.58, 0.51]},
+    "candidates_considered": ["FDL_33_2021_LABOUR", "FL_8_1980_LABOUR_REPEALED", "DIFC_2_2019_EMPLOYMENT"],
+    "candidates_rejected": [
+      {"law_id": "FL_8_1980_LABOUR_REPEALED", "reason": "status=repealed"},
+      {"law_id": "DIFC_2_2019_EMPLOYMENT", "reason": "jurisdiction_mismatch: query specifies onshore UAE"}
+    ]
+  },
+  "authoritative_selection": {
+    "jurisdiction_resolved": "federal_uae",
+    "currency_resolved": "in_force",
+    "instrument_chosen": "federal_decree_law",
+    "rationale": "query specifies onshore UAE private-sector; federal Labour Law applies"
+  },
+  "latency_ms": {
+    "query_understanding": 130,
+    "retrieval": 40,
+    "disambiguation": 25,
+    "generation": 950,
+    "total": 1145
+  },
+  "tokens": {"in": 520, "out": 142, "cost_usd": 0.0009},
+  "confidence": {"score": 0.88, "refusal_threshold": 0.30},
+  "refused": false
+}
+```
+
+A jurisdiction-ambiguous query that refuses:
+
+```json
+{
+  "query": "what's the notice period for termination?",
+  "answer": null,
+  "refused": true,
+  "refusal_reason": "jurisdiction_ambiguous: federal UAE Labour Law (FDL 33/2021 Art. 43) and DIFC Employment Law (DIFC 2/2019 s. 62) both govern this question but give different answers depending on where the employer operates",
+  "retrieval": { "...": "..." },
+  "authoritative_selection": {
+    "jurisdiction_resolved": null,
+    "ambiguity_detected": ["federal_uae", "difc_free_zone"]
+  }
+}
+```
+
+A stale-law probe that surfaces the repeal:
+
+```json
+{
+  "query": "what did the 1980 Labour Law require for end-of-service gratuity?",
+  "answer": "Under the REPEALED Federal Law No. 8 of 1980 (Article ...), the requirement was ... However, this law was repealed by FDL 33/2021 effective 02.02.2022. The current requirement is under Article 51 of FDL 33/2021.",
+  "citations": [
+    {"law_id": "FL_8_1980_LABOUR_REPEALED", "article": "...", "note": "repealed"},
+    {"law_id": "FDL_33_2021_LABOUR", "article": "51", "note": "current equivalent"}
+  ],
+  "refused": false
+}
+```
+
+An answer drawn from a document whose `source_note` declares a currency gap:
+
+```json
+{
+  "query": "what is the maximum probationary period for onshore UAE private-sector employment?",
+  "answer": "Under Article 9 of Federal Decree-Law No. 33 of 2021, the probationary period shall not exceed six (6) months. Note: the corpus contains the 2021 text as originally enacted; subsequent amending decrees (FDL 14/2022, FDL 20/2023, FDL 9/2024) referenced in the manifest are not included, and the current provision may differ. Verify against an up-to-date source before action.",
+  "citations": [
+    {"law_id": "FDL_33_2021_LABOUR", "article": "9", "page": 5}
+  ],
+  "retrieval": {
+    "strategy": "hybrid",
+    "structured_filter": {"jurisdiction": "federal_uae", "status": "in_force"},
+    "candidates_considered": ["FDL_33_2021_LABOUR", "FL_8_1980_LABOUR_REPEALED"],
+    "candidates_rejected": [
+      {"law_id": "FL_8_1980_LABOUR_REPEALED", "reason": "status=repealed"}
+    ]
+  },
+  "authoritative_selection": {
+    "jurisdiction_resolved": "federal_uae",
+    "currency_resolved": "in_force_with_known_gap",
+    "gap_disclosure_triggered": true,
+    "rationale": "source_note for FDL_33_2021_LABOUR declares subsequent amendments not in corpus"
+  },
+  "refused": false
+}
+```
+
+**Aggregate summary** - `eval/results/summary.json`:
+
+```json
+{
+  "golden_set_size": 16,
+  "axes_measured": ["retrieval", "grounding", "latency"],
+  "axes_analyzed": ["accuracy", "cost"],
+  "retrieval_strategy_mix": {
+    "structured_only": 4,
+    "vector_only": 5,
+    "hybrid": 5,
+    "refused": 2
+  },
+  "authoritative_selection": {
+    "version_disambiguation_accuracy": 0.88,
+    "jurisdiction_disambiguation_accuracy": 0.75,
+    "instrument_selection_accuracy": 0.82
+  },
+  "retrieval": {
+    "metric": "recall@5_on_document_and_article",
+    "value": 0.79,
+    "failure_modes": {
+      "retrieved_repealed_law": 1,
+      "retrieved_wrong_jurisdiction": 2,
+      "retrieved_base_law_when_exec_reg_needed": 1
+    }
+  },
+  "grounding": {
+    "quotation_fidelity_rate": 0.93,
+    "method": "citation_span_overlap",
+    "detection": "article_span_check_plus_self_critique",
+    "mitigation": "refuse_or_quote_verbatim"
+  },
+  "accuracy": {"end_to_end": 0.75, "scheme": "rubric_graded", "measured": false, "rationale": "…"},
+  "latency_ms": {"p50": 1180, "p95": 2340, "by_stage": {"query_understanding": 125, "retrieval": 45, "disambiguation": 22, "generation": 1010}},
+  "cost": {"tokens_in_median": 812, "tokens_out_median": 180, "analyzed_only": true},
+  "scale_projection": {
+    "corpus_10x": {"indexing_s": 720, "method": "extrapolation_from_parse_and_embed_time"},
+    "corpus_100x": {"indexing_s": 8400, "method": "O_n_embed_plus_metadata_index_overhead"},
+    "first_bottleneck": "single_threaded_PDF_parse"
+  },
+  "load_analysis": {
+    "measurement_type": "analytical",
+    "throughput_rps_ceiling": 1.8,
+    "bottleneck": "single_threaded_local_llm"
+  },
+  "adversarial": {
+    "probes_run": 3,
+    "stale_law": "amendment_surfaced_correctly",
+    "jurisdiction_boundary": "disambiguation_requested",
+    "prompt_injection": "detected_and_refused"
+  }
+}
+```
+
+**Ingestion artifact** - `eval/results/indexing.json` with per-document status (`ok` / `skipped` / `error` / `unchanged_from_cache`), timings, parser used, articles detected, chunks produced, cross-reference edges, and final index size.
+
+**Narrative** - `REPORT.md` consolidates what does not fit in JSON. Five sections, target 2-4 pages total:
+
+1. **Architectural decisions** - at least three, each with a rejected alternative and a signal that would make you revisit. At least one on the ingestion layer, at least one on the authoritative-document-selection mechanism
+2. **Trade-off matrix** - retrieval quality, latency, cost, and safety / quotation fidelity; your position, what you gave up, what would push you the other way
+3. **Grounding, quotation fidelity, and disambiguation strategy** - detection, mitigation, measured rates for each of the three disambiguation axes (version, jurisdiction, instrument), the ablation that moved grounding most, and your cheapest next improvement blocked only by time
+4. **Adversarial findings** - what happened on each probe you ran
+5. **AI-assistance disclosure** - tools used, where they helped, and how you verified the output
+
+Prose and tables over prose walls. Length is not a proxy for quality.
+
+---
+
+## Deliverables
+
+A git repository (public, private with invite, or zip) containing:
+
+- source code with the test suite from §8
+- `README.md` - install and run instructions, reproducible. Two entry points: `ingest` (runs the pipeline against the manifest) and `ask` (answers a query against the index)
+- `REPORT.md` - target 2-4 pages, prose and tables over prose walls
+- `eval/` - `golden_set.jsonl`, `results/traces.jsonl`, `results/summary.json`, `results/indexing.json`
+- either a short screen recording (any tool) or `DEMO.md` with copy-pasteable example commands and outputs, including one `ingest` run from cold, one `ingest` run against unchanged manifest (showing idempotency), and one `ask` example per retrieval strategy
+
+**Out of scope** (doing these earns no points): model fine-tuning or training, a rich web UI, authentication or multi-tenancy, Dockerisation for production, custom embedding models, knowledge graphs, writing your own PDF parser, fetching documents from the internet, OCR (all provided PDFs have a text layer).
