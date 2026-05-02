@@ -1,7 +1,6 @@
 from enum import Enum
-from dataclasses import dataclass
-from typing import Optional
-
+from dataclasses import dataclass, asdict
+from typing import Optional, List
 
 class Jurisdiction(Enum):
     FEDERAL_UAE = "federal_uae"
@@ -48,6 +47,7 @@ class Article:
     text: str
     page_number: int
     paragraph_number: Optional[str] = None
+    embedding: Optional[List[float]] = None
 
 
 @dataclass
@@ -59,3 +59,30 @@ class Citation:
     quote: str 
     is_verbatim: bool 
     paragraph: Optional[str] = None
+
+@dataclass
+class QueryResult:
+    """Complete result of one Q&A"""
+    query: str
+    answer: Optional[str]
+    citations: List['Citation']
+    documents_considered: List[str]  # law_ids
+    documents_used: List[str]  # law_ids actually used
+    refused: bool
+    refusal_reason: Optional[str]
+    timestamp: str
+    latency_ms: float
+    
+    def to_dict(self):
+        """Convert to dictionary for JSON"""
+        return {
+            "query": self.query,
+            "answer": self.answer,
+            "citations": [asdict(c) for c in self.citations],
+            "documents_considered": self.documents_considered,
+            "documents_used": self.documents_used,
+            "refused": self.refused,
+            "refusal_reason": self.refusal_reason,
+            "timestamp": self.timestamp,
+            "latency_ms": self.latency_ms,
+        }

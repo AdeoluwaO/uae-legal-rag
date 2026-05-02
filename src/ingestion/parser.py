@@ -49,16 +49,3 @@ def find_articles(text: str, law_id: str) -> List[tuple]:
         articles.append((article_num, start, end, article_text))
     
     return articles
-
-    
-# Example usage:
-if __name__ == "__main__":
-    pdf_path = "input_corpus/data/FDL_33_2021_LABOUR.pdf"
-    text = extract_text_from_pdf(pdf_path)
-    print(f"Extracted {len(text)} characters from PDF")
-    
-    articles = find_articles(text, "FDL_33_2021_LABOUR")
-    print(f"Found {len(articles)} articles")
-    for article_num, _, _, article_text in articles[:3]:  # Show first 3
-        print(f"\n--- Article {article_num} ---")
-        print(article_text[:200])  # First 200 chars

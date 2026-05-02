@@ -26,21 +26,22 @@ class AnswerGenerator:
         return answer, False, None
 
 
-    def ground_citations(self, answer:str, articles:list[Article]) -> list[Citation]: 
+    def ground_citations(self, answer:str, articles:list[Article]) -> list[Citation]:
         """
         Extract citations from the answer and match them to articles.
-        
+
         This is a simple implementation; a real one would be more sophisticated.
         """
 
         citations = []
 
         for article in articles:
-            if f"Article {article.article_number}" in answer: 
-            # Simple heuristic: if article number appears in answer, cite it
-              citations.append(Citation(
+            if f"Article {article.article_number}" in answer:
+                # Simple heuristic: if article number appears in answer, cite it
+                citations.append(Citation(
                     law_id=article.law_id,
                     article=article.article_number,
+                    page=article.page_number,
                     quote=article.text[:100],  # First 100 chars
                     is_verbatim=True,
                 ))

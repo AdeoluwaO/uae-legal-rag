@@ -1,0 +1,131 @@
+{
+  "corpus_date": "2026-05-03T00:22:38.395717",
+  "total_documents": 12,
+  "total_time_seconds": 45.01,
+  "documents": [
+    {
+      "law_id": "FDL_33_2021_LABOUR",
+      "filename": "FDL_33_2021_LABOUR.pdf",
+      "status": "ok",
+      "articles_detected": 60,
+      "chunks_produced": 60,
+      "embed_time_ms": 2721.2,
+      "parse_time_ms": 816.78,
+      "errors": []
+    },
+    {
+      "law_id": "FL_8_1980_LABOUR_REPEALED",
+      "filename": "FL_8_1980_LABOUR_REPEALED.pdf",
+      "status": "ok",
+      "articles_detected": 14,
+      "chunks_produced": 14,
+      "embed_time_ms": 778.14,
+      "parse_time_ms": 1463.34,
+      "errors": []
+    },
+    {
+      "law_id": "DIFC_2_2019_EMPLOYMENT",
+      "filename": "DIFC_2_2019_EMPLOYMENT.pdf",
+      "status": "ok",
+      "articles_detected": 0,
+      "chunks_produced": 0,
+      "embed_time_ms": 0.0,
+      "parse_time_ms": 1757.34,
+      "errors": []
+    },
+    {
+      "law_id": "FDL_32_2021_COMMERCIAL_COMPANIES",
+      "filename": "FDL_32_2021_COMMERCIAL_COMPANIES.pdf",
+      "status": "ok",
+      "articles_detected": 367,
+      "chunks_produced": 367,
+      "embed_time_ms": 11911.27,
+      "parse_time_ms": 2440.06,
+      "errors": []
+    },
+    {
+      "law_id": "FL_2_2015_COMMERCIAL_COMPANIES_REPEALED",
+      "filename": "FL_2_2015_COMMERCIAL_COMPANIES_REPEALED.pdf",
+      "status": "ok",
+      "articles_detected": 412,
+      "chunks_produced": 412,
+      "embed_time_ms": 9475.14,
+      "parse_time_ms": 2204.72,
+      "errors": []
+    },
+    {
+      "law_id": "FL_15_2020_CONSUMER_PROTECTION",
+      "filename": "FL_15_2020_CONSUMER_PROTECTION.pdf",
+      "status": "ok",
+      "articles_detected": 40,
+      "chunks_produced": 40,
+      "embed_time_ms": 1905.44,
+      "parse_time_ms": 176.2,
+      "errors": []
+    },
+    {
+      "law_id": "FL_24_2006_CONSUMER_PROTECTION_REPEALED",
+      "filename": "FL_24_2006_CONSUMER_PROTECTION_REPEALED.pdf",
+      "status": "ok",
+      "articles_detected": 25,
+      "chunks_produced": 25,
+      "embed_time_ms": 442.46,
+      "parse_time_ms": 89.85,
+      "errors": []
+    },
+    {
+      "law_id": "CD_66_2023_CONSUMER_PROTECTION_EXEC_REG",
+      "filename": "CD_66_2023_CONSUMER_PROTECTION_EXEC_REG.pdf",
+      "status": "ok",
+      "articles_detected": 3,
+      "chunks_produced": 3,
+      "embed_time_ms": 211.93,
+      "parse_time_ms": 402.44,
+      "errors": []
+    },
+    {
+      "law_id": "FDL_8_2017_VAT",
+      "filename": "FDL_8_2017_VAT.pdf",
+      "status": "ok",
+      "articles_detected": 119,
+      "chunks_produced": 119,
+      "embed_time_ms": 1889.79,
+      "parse_time_ms": 1306.44,
+      "errors": []
+    },
+    {
+      "law_id": "CD_52_2017_VAT_EXEC_REG",
+      "filename": "CD_52_2017_VAT_EXEC_REG.pdf",
+      "status": "ok",
+      "articles_detected": 0,
+      "chunks_produced": 0,
+      "embed_time_ms": 0.0,
+      "parse_time_ms": 1871.47,
+      "errors": []
+    },
+    {
+      "law_id": "FDL_20_2018_AML",
+      "filename": "FDL_20_2018_AML.pdf",
+      "status": "ok",
+      "articles_detected": 40,
+      "chunks_produced": 40,
+      "embed_time_ms": 642.67,
+      "parse_time_ms": 482.37,
+      "errors": []
+    },
+    {
+      "law_id": "FDL_34_2021_CYBERCRIMES",
+      "filename": "FDL_34_2021_CYBERCRIMES.pdf",
+      "status": "ok",
+      "articles_detected": 77,
+      "chunks_produced": 77,
+      "embed_time_ms": 1053.44,
+      "parse_time_ms": 513.49,
+      "errors": []
+    }
+  ],
+  "summary": {
+    "total_articles": 1157,
+    "total_index_size_mb": 12.97
+  }
+}
