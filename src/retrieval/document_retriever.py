@@ -19,9 +19,9 @@ class DocumentRetriever:
         """
         Does the question ask about "onshore UAE" or "DIFC free zone"?
         
-        If query says "onshore" → filter to federal_uae only
-        If query says "DIFC" → filter to difc_free_zone only
-        If ambiguous and answers differ → REFUSE
+        If query says "onshore" filter to federal_uae only
+        If query says "DIFC" filter to difc_free_zone only
+        If ambiguous and answers differ REFUSE
         """
 
         keywords_onshore = ["onshore", "federal", "uae", "private sector", "mainland"]
@@ -46,8 +46,8 @@ class DocumentRetriever:
         """
         Filter out repealed laws UNLESS the question asks about them.
         
-        If query says "used to" or "previously" → allow repealed
-        Otherwise → only in_force laws
+        If query says "used to" or "previously" allow repealed
+        Otherwise only in_force laws
         """
 
         keywords_historical = ["used to", "previously", "1980 law", "old", "repealed"]
@@ -65,7 +65,7 @@ class DocumentRetriever:
         If a question is about details/procedures, prefer executive
         regulation. If about general principles, prefer base law.
         
-        If query mentions "regulation" or "procedure" or "detailed" → prefer exec regs
+        If query mentions "regulation" or "procedure" or "detailed" prefer exec regs
         """
 
         keywords_detailed = ["regulation", "procedure", "detailed", "specific", "requirement"]

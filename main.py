@@ -15,7 +15,7 @@ from src.generation.answer_generator import AnswerGenerator
 
 def ingest():
     """
-    Pipeline: Load manifest → Extract all articles from all PDFs → Store
+    Pipeline: Load manifest  Extract all articles from all PDFs Store
     """
     print("Loading manifest...")
     docs = load_manifest("input_corpus/baseline.yaml")

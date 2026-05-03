@@ -51,7 +51,7 @@ class ArticleStorage:
                 return a
         return None
     
-    def search_by_similarity(self, query: str, top_k: int = 5) -> List[tuple]:
+    def search_by_similarity(self, query: str, top_k: int = 5) -> List[tuple[Article, float]]:
         """
         Find articles most similar to a query.
 
@@ -83,11 +83,6 @@ class ArticleStorage:
 
         # Return top k 
         return similarities[:top_k]
-
-
-        
-        
-
 
     def save_to_json(self, filepath: str):
         """Save all articles to a JSON file for later"""

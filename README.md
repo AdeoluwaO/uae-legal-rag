@@ -25,7 +25,7 @@ git clone <repo-url>
 cd uae-legal-rag
 
 # Create virtual environment (optional but recommended)
-python3 -m venv venv
+python -m venv venv
 source venv/bin/activate
 
 # Install dependencies
@@ -40,7 +40,7 @@ pip install -r requirements.txt
 Extract and index all PDF documents from the manifest:
 
 ```bash
-python3 main.py
+python main.py
 ```
 
 **Output:**
@@ -51,7 +51,7 @@ python3 main.py
 ### 2. Ask a Question
 
 ```bash
-python3 main.py ask "What is the notice period for terminating employment onshore UAE?"
+python main.py ask "What is the notice period for terminating employment onshore UAE?"
 ```
 
 **Output:**
@@ -63,26 +63,26 @@ python3 main.py ask "What is the notice period for terminating employment onshor
 Test against golden set:
 
 ```bash
-python3 run_eval.py
+python run_eval.py
 ```
 
 ## Commands Reference
 
 ### Ingest Corpus
 ```bash
-python3 main.py
+python main.py
 ```
 Parses all PDFs in `input_corpus/data/`, extracts articles, embeds them, and saves index.
 
 ### Ask Question
 ```bash
-python3 main.py ask "<your question here>"
+python main.py ask "<your question here>"
 ```
 Retrieves relevant articles and generates answer with citations.
 
 ### Run Tests
 ```bash
-python3 -m pytest tests/ -v
+python -m pytest tests/ -v
 ```
 
 

@@ -5,7 +5,7 @@
 Extract and index all PDF documents from the manifest:
 
 ```bash
-python3 main.py
+python main.py
 ```
 
 **Output:**
@@ -16,7 +16,7 @@ python3 main.py
 ### 2. Ask a Question
 
 ```bash
-python3 main.py ask "What is the notice period for terminating employment onshore UAE?"
+python main.py ask "What is the notice period for terminating employment onshore UAE?"
 ```
 
 **Output:**
@@ -28,5 +28,5 @@ python3 main.py ask "What is the notice period for terminating employment onshor
 Test against golden set:
 
 ```bash
-python3 run_eval.py
+python run_eval.py
 ```

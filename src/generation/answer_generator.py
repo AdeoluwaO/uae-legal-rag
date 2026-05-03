@@ -16,8 +16,8 @@ class AnswerGenerator:
         if not articles:
             return None, True, "No relevant articles found"
 
-        # For now, just concatenate the articles as a simple answer
-        # For production use an LLM here
+        # For now i just concatenate the articles as a simple answer
+        # if it was on production i would use an LLM here
         answer = f"Based on the retrieved articles:\n\n"
         for article in articles:
             answer += f"Article {article.article_number} ({article.law_id}):\n"
@@ -29,8 +29,6 @@ class AnswerGenerator:
     def ground_citations(self, answer:str, articles:list[Article]) -> list[Citation]:
         """
         Extract citations from the answer and match them to articles.
-
-        This is a simple implementation; a real one would be more sophisticated.
         """
 
         citations = []
