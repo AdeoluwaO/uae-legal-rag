@@ -30,3 +30,7 @@ Test against golden set:
 ```bash
 python run_eval.py
 ```
+
+### Ask Question
+```bash
+python main.py ask "<your question here>"
