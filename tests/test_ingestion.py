@@ -61,6 +61,47 @@ class TestArticleExtraction:
         articles = find_articles(text, "TEST_LAW")
         assert articles == []
 
+    def test_find_articles_difc_format(self):
+        """Test: Extract articles in DIFC format (N. DIFC)"""
+        text = """
+        1. DIFC Employment Articles
+        Employment terms and conditions apply.
+
+        2. DIFC Termination Rights
+        An employee may be terminated with notice.
+
+        3. DIFC Dispute Resolution
+        Disputes shall be resolved in DIFC courts.
+        """
+
+        articles = find_articles(text, "DIFC_LAW")
+
+        # Should find 3 articles
+        assert len(articles) == 3, f"Expected 3 articles, got {len(articles)}"
+
+        # Check article numbers
+        article_nums = [a[0] for a in articles]
+        assert article_nums == ["1", "2", "3"]
+
+    def test_find_articles_difc_with_content(self):
+        """Test: DIFC article text is preserved correctly"""
+        text = """
+        1. DIFC Employment
+        This applies to DIFC employees.
+
+        2. DIFC Wages
+        Wages must be paid in AED.
+        """
+
+        articles = find_articles(text, "DIFC_LAW")
+
+        # Check first article contains expected text
+        assert "Employment" in articles[0][3]
+        assert "DIFC employees" in articles[0][3]
+
+        # Check second article contains expected text
+        assert "Wages" in articles[1][3]
+
 
 class TestArticleStorage:
     """Test article storage and retrieval"""

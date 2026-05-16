@@ -68,16 +68,31 @@ class TestJurisdictionFiltering:
         assert "FDL_33_2021_LABOUR" not in law_ids
 
     def test_ambiguous_jurisdiction_refuses(self):
-        """Test: Query without jurisdiction hint returns refusal"""
+        """Test: Query with both DIFC and onshore keywords refuses due to ambiguity"""
+        docs = self.create_test_documents()
+        picker = DocumentRetriever(docs)
+
+        # Query mentioning both DIFC and onshore is truly ambiguous
+        query = "What is the difference between DIFC and onshore employment rules?"
+        selected, refusal = picker.pick_for_query(query)
+
+        # Should refuse due to true ambiguity (both jurisdictions mentioned)
+        assert refusal is not None
+        assert "jurisdiction" in refusal.lower()
+
+    def test_federal_topic_without_keywords(self):
+        """Test: Query about federal-only topic filters correctly without keywords"""
         docs = self.create_test_documents()
         picker = DocumentRetriever(docs)
 
         query = "What is the notice period for termination?"
         selected, refusal = picker.pick_for_query(query)
 
-        # Should refuse due to ambiguity
-        assert refusal is not None
-        assert "jurisdiction" in refusal.lower()
+        # Should filter to federal documents (termination is federal-only topic)
+        assert refusal is None
+        law_ids = [d.law_id for d in selected]
+        assert "FDL_33_2021_LABOUR" in law_ids
+        assert "DIFC_2_2019_EMPLOYMENT" not in law_ids
 
 
 class TestCurrencyFiltering:

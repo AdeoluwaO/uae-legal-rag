@@ -44,6 +44,12 @@ class ArticleStorage:
          """Get all articles from one law"""
          return [a for a in self.articles if a.law_id == law_id]
 
+    def remove_articles_by_law(self, law_id: str) -> int:
+        """Remove all articles from a specific law. Returns count removed."""
+        original_count = len(self.articles)
+        self.articles = [a for a in self.articles if a.law_id != law_id]
+        return original_count - len(self.articles)
+
     def get_article(self, law_id: str, article_number: str) -> Optional[Article]:
         """Get a specific article by ID and number"""
         for a in self.articles:

@@ -10,37 +10,73 @@ class DocumentRetriever:
     Given a question, decide which documents apply.
     This is the "authoritative selection" logic.
     """
-    
+
+    # Mapping of topics to jurisdictions (federal subjects have no DIFC equivalent in corpus)
+    FEDERAL_ONLY_TOPICS = {
+        "aml", "anti-money laundering", "combating financing",
+        "commercial companies", "companies law",
+        "consumer protection", "consumer",
+        "vat", "value-added tax", "taxation",
+        "cybercrimes", "cybercrime", "rumours",
+        "labour", "employment", "worker", "employee", "termination", "wage",
+        "repealed", "old law", "1980"
+    }
+
+    # Topics exclusive to DIFC (if any in corpus)
+    DIFC_ONLY_TOPICS = set()
+
     def __init__(self, all_documents:List[Document]):
         self.documents = {doc.law_id: doc for doc in all_documents}
 
 
     def pick_by_jurisdiction(self, query: str, candidates: List[Document]) -> List[Document]:
         """
-        Does the question ask about "onshore UAE" or "DIFC free zone"?
-        
-        If query says "onshore" filter to federal_uae only
-        If query says "DIFC" filter to difc_free_zone only
-        If ambiguous and answers differ REFUSE
+        Determine which jurisdiction applies to the query.
+
+        Rules in order:
+        1. If query explicitly mentions DIFC → filter to DIFC documents
+        2. If query explicitly mentions onshore/federal → filter to federal documents
+        3. If query mentions a federal-only topic (AML, VAT, Cybercrimes, etc) → federal
+        4. If query mentions a DIFC-only topic → DIFC
+        5. If both jurisdiction keywords are present → ambiguous (refuse)
+        6. Otherwise → no filter (both jurisdictions' documents)
         """
-
-        keywords_onshore = ["onshore", "federal", "uae", "private sector", "mainland"]
-        keywords_difc = ["difc", "free zone"]
-
         query_lower = query.lower()
 
+        keywords_onshore = ["onshore", "federal", "private sector", "mainland"]
+        keywords_difc = ["difc", "free zone"]
 
         mentions_onshore = any(keyword in query_lower for keyword in keywords_onshore)
         mentions_difc = any(keyword in query_lower for keyword in keywords_difc)
 
-        if mentions_onshore and mentions_difc: 
-            return None # Ambiguous - REFUSE
+        # Explicit jurisdiction conflict → refuse
+        if mentions_onshore and mentions_difc:
+            return None
 
+        # Explicit DIFC mention
         if mentions_difc:
             return [d for d in candidates if d.jurisdiction == Jurisdiction.DIFC_FREE_ZONE]
-        
-        if mentions_onshore: 
+
+        # Explicit onshore/federal mention
+        if mentions_onshore:
             return [d for d in candidates if d.jurisdiction == Jurisdiction.FEDERAL_UAE]
+
+        # Topic-based jurisdiction inference (no explicit keywords)
+        has_federal_topic = any(topic in query_lower for topic in self.FEDERAL_ONLY_TOPICS)
+        has_difc_topic = any(topic in query_lower for topic in self.DIFC_ONLY_TOPICS)
+
+        if has_federal_topic and has_difc_topic:
+            # Both federal and DIFC topics mentioned → ambiguous
+            return None
+
+        if has_federal_topic:
+            return [d for d in candidates if d.jurisdiction == Jurisdiction.FEDERAL_UAE]
+
+        if has_difc_topic:
+            return [d for d in candidates if d.jurisdiction == Jurisdiction.DIFC_FREE_ZONE]
+
+        # No jurisdiction hint found → return all candidates (let other filters decide)
+        return candidates
     
     def pick_by_currency(self, query:str, candidates: List[Document]) -> List[Document]:
         """

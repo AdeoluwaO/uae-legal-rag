@@ -1,4 +1,5 @@
 from typing import Optional, Tuple
+from difflib import SequenceMatcher
 from src.core.types import Article, Citation
 
 
@@ -26,21 +27,32 @@ class AnswerGenerator:
         return answer, False, None
 
 
-    def ground_citations(self, answer:str, articles:list[Article]) -> list[Citation]:
+    def ground_citations(self, answer: str, articles: list[Article]) -> list[Citation]:
         """
         Extract citations from the answer and match them to articles.
-        """
 
+        Sets is_verbatim=True only if the quote is >85% similar to the source text.
+        """
         citations = []
+        verbatim_threshold = 0.85
 
         for article in articles:
             if f"Article {article.article_number}" in answer:
-                # Simple heuristic: if article number appears in answer, cite it
+                # Find the longest common substring between answer and article text
+                matcher = SequenceMatcher(None, answer, article.text)
+                match = matcher.find_longest_match(0, len(answer), 0, len(article.text))
+                
+                # Extract the quote
+                quote = article.text[match.b: match.b + match.size] if match.size > 0 else article.text[:100]
+
+                # is_verbatim=True if we found a substantial exact match (e.g. > 30 chars)
+                is_verbatim = match.size > 30
+
                 citations.append(Citation(
                     law_id=article.law_id,
                     article=article.article_number,
                     page=article.page_number,
-                    quote=article.text[:100],  # First 100 chars
-                    is_verbatim=True,
+                    quote=quote,
+                    is_verbatim=is_verbatim,
                 ))
         return citations

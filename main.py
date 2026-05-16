@@ -7,6 +7,7 @@ from output.document_writer import DocumentWriter
 import sys
 from src.core.manifest_loader import load_manifest
 from src.ingestion.parser import extract_text_from_pdf, find_articles
+from src.ingestion.idempotency import IngestionCache
 from src.storage.structured_store import ArticleStorage
 from src.core.types import Article
 from src.retrieval.document_retriever import DocumentRetriever
@@ -15,21 +16,31 @@ from src.generation.answer_generator import AnswerGenerator
 
 def ingest():
     """
-    Pipeline: Load manifest  Extract all articles from all PDFs Store
+    Pipeline: Load manifest → Extract all articles from all PDFs → Store
+
+    Uses idempotency cache to skip re-processing unchanged documents.
     """
     print("Loading manifest...")
     docs = load_manifest("input_corpus/baseline.yaml")
 
+    # Initialize storage and cache
     storage = ArticleStorage()
+    cache = IngestionCache()
     ingest_start = time.time()
 
     print(f"Found {len(docs)} documents in manifest")
 
+    # Load existing articles from disk (for unchanged documents)
+    if os.path.exists("generated_data/articles_index.json"):
+        print("Loading existing article index...")
+        storage.load_from_json("articles_index.json")
+
     # Track status of each document
     doc_status = []
+    processed_count = 0
+    skipped_count = 0
 
     for doc in docs:
-        print(f"\nProcessing {doc.law_id}...")
         pdf_path = f"input_corpus/data/{doc.filename}"
 
         status_entry = {
@@ -40,10 +51,26 @@ def ingest():
             "chunks_produced": 0,
             "embed_time_ms": 0,
             "parse_time_ms": 0,
+            "cached": False,
             "errors": []
         }
 
+        # Check if document is cached and unchanged
+        if cache.is_cached(doc.law_id, pdf_path):
+            print(f"\n[CACHED] {doc.law_id} - skipping (unchanged)")
+            status_entry["cached"] = True
+            skipped_count += 1
+            doc_status.append(status_entry)
+            continue
+
+        print(f"\nProcessing {doc.law_id}...")
+
         try:
+            # Remove any existing articles from this document (for re-ingestion)
+            removed = storage.remove_articles_by_law(doc.law_id)
+            if removed > 0:
+                print(f"  Removing {removed} existing articles for re-ingestion")
+
             parse_start = time.time()
             text = extract_text_from_pdf(pdf_path)
             print(f"  Extracted {len(text)} characters")
@@ -66,6 +93,10 @@ def ingest():
 
             status_entry["embed_time_ms"] = round((time.time() - embed_start) * 1000, 2)
 
+            # Update cache for this document
+            cache.update_cache(doc.law_id, pdf_path)
+            processed_count += 1
+
         except Exception as e:
             error_msg = f"{type(e).__name__}: {str(e)}"
             print(f"  Error: {error_msg}")
@@ -74,12 +105,17 @@ def ingest():
 
         doc_status.append(status_entry)
 
+    # Save cache
+    cache.save()
+
     # Save index
     storage.save_to_json("articles_index.json")
     total_time = time.time() - ingest_start
 
     print(f"\n Indexing complete!")
     print(f"  Total articles: {len(storage.articles)}")
+    print(f"  Documents processed: {processed_count}")
+    print(f"  Documents cached: {skipped_count}")
     print(f"  Total time: {total_time:.2f}s")
     print(f"  Saved to generated_data/articles_index.json")
 
@@ -88,6 +124,8 @@ def ingest():
     ingestion_artifact = {
         "corpus_date": datetime.now().isoformat(),
         "total_documents": len(docs),
+        "processed_documents": processed_count,
+        "cached_documents": skipped_count,
         "total_time_seconds": round(total_time, 2),
         "documents": doc_status,
         "summary": {
